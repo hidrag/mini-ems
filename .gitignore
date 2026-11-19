@@ -57,6 +57,26 @@ reports/generated/
 *.sqlite3
 *.db
 
+# PostgreSQL runtime and backups; keep application migrations trackable
+pgdata/
+postgres-data/
+backups/
+*.dump
+*.backup
+*.sql.gz
+
+# Mosquitto runtime, credentials and machine-specific broker configuration
+mqtt/data/
+mqtt/log/
+mqtt/secrets/
+mqtt/passwords
+mqtt/passwords.*
+!mqtt/passwords.example
+!mqtt/passwords.*.example
+mosquitto.db*
+mqtt/*.local.conf
+mqtt/*.production.conf
+
 # OS
 .DS_Store
 Thumbs.db

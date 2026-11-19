@@ -1,0 +1,100 @@
+# Mini EMS Phase 1 CI.
+# Runs only after the owner publishes the repository (Stage B). No Docker, no
+# external hosted database, no AWS or production credentials. PostgreSQL is
+# installed natively on the GitHub-hosted Ubuntu runner and isolated to a
+# dedicated CI database + restricted role guarded by the test database guard.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (Python 3.12 + native PostgreSQL)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL natively
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql
+          sudo systemctl start postgresql
+          sudo -u postgres psql -c "SELECT version();"
+
+      - name: Prepare isolated CI database credentials
+        run: |
+          CI_PW=*** rand -hex 16)"
+          echo "::add-mask::$CI_PW"
+          echo "CI_TEST_DB_PASSWORD=*** >> "$GITHUB_ENV"
+
+      - name: Create dedicated CI database and restricted role
+        run: |
+          sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE mini_ems_test LOGIN PASSWORD '${CI_TEST_DB_PASSWORD}' NOSUPERUSER NOCREATEDB NOCREATEROLE;"
+          sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE mini_ems_test OWNER mini_ems_test;"
+          sudo -u postgres psql -v ON_ERROR_STOP=1 -c "REVOKE ALL ON DATABASE mini_ems_test FROM PUBLIC;"
+
+      - name: Set up uv and Python 3.12
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+          enable-cache: true
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --extra dev
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: Backend tests (guard, migration, API, updated_at)
+        run: uv run pytest -v
+        env:
+          APP_ENV: testing
+          TEST_DATABASE_HOST: localhost
+          TEST_DATABASE: mini_ems_test@localhost:5432/mini_ems_test
+          PGPASSWORD: ${{ env.CI_TEST_DB_PASSWORD }}
+
+  frontend:
+    name: Frontend (Node 24 LTS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies (npm ci)
+        run: npm ci --no-audit --no-fund
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Frontend tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
