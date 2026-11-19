@@ -37,9 +37,9 @@ jobs:
 
       - name: Prepare isolated CI database credentials
         run: |
-          CI_PW=*** rand -hex 16)"
+          CI_PW="$(openssl rand -hex 16)"
           echo "::add-mask::$CI_PW"
-          echo "CI_TEST_DB_PASSWORD=*** >> "$GITHUB_ENV"
+          echo "CI_TEST_DB_PASSWORD=$CI_PW" >> "$GITHUB_ENV"
 
       - name: Create dedicated CI database and restricted role
         run: |
